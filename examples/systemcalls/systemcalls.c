@@ -1,4 +1,10 @@
 #include "systemcalls.h"
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h> 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,7 +22,8 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
+    int ret = system(cmd);
+    (void)ret;
     return true;
 }
 
@@ -58,8 +65,26 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    // Crear un proceso hijo
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork failed");
+        va_end(args);
+        return false;
+    } else if (pid == 0) {
+        // Proceso hijo: ejecutar el comando
+        execv(command[0], command);
+        // Si execv falla, termina el hijo con error
+        perror("execv failed");
+        _exit(1);
+    } else {
+        // Proceso padre: esperar a que el hijo termine
+        int status;
+        waitpid(pid, &status, 0);
 
-    va_end(args);
+        va_end(args);
+        return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    }
 
     return true;
 }
@@ -78,6 +103,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
+        printf("Printing command[%u]: %s\n", i, command[i]);
     }
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
@@ -92,8 +118,26 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    // Crear un proceso hijo
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork failed");
+        va_end(args);
+        return false;
+    } else if (pid == 0) {
+        if (dup2(fd, 1) < 0) { perror("dup2"); abort(); }
+        close(fd);
+        execvp(command[0], command); perror("execvp"); abort();
+        _exit(1);
+    } else {
+        // Proceso padre: esperar a que el hijo termine
+        int status;
+        waitpid(pid, &status, 0);
 
-    va_end(args);
+        va_end(args);
+        return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    }
 
     return true;
 }
