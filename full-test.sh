@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # This script can be copied into your base directory for use with
 # automated testing using assignment-autotest.  It automates the
 # steps described in https://github.com/cu-ecen-5013/assignment-autotest/blob/master/README.md#running-tests
@@ -14,7 +14,8 @@ echo "starting test with SKIP_BUILD=\"${SKIP_BUILD}\" and DO_VALIDATE=\"${DO_VAL
 logfile=test.sh.log
 # See https://stackoverflow.com/a/3403786
 # Place stdout and stderr in a log file
-exec > >(tee -i -a "$logfile") 2> >(tee -i -a "$logfile" >&2)
+#exec > >(tee -i -a "$logfile") 2> >(tee -i -a "$logfile" >&2)
+sed -i 's/^exec > >/# exec > >/' full-test.sh
 
 echo "Running test with user $(whoami)"
 

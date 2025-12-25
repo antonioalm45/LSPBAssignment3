@@ -66,6 +66,7 @@ bool do_exec(int count, ...)
  *
 */
     // Crear un proceso hijo
+    fflush(stdout);
     pid_t pid = fork();
     if (pid < 0) {
         perror("fork failed");
