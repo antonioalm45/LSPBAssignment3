@@ -142,15 +142,25 @@ cp ${FINDER_APP_DIR}/finder-test.sh ${ROOTFSDIR}/home/
 cp ${FINDER_APP_DIR}/writer ${ROOTFSDIR}/home/
 mkdir -p ${ROOTFSDIR}/home/conf
 cp ${FINDER_APP_DIR}/conf/* ${ROOTFSDIR}/home/conf/
-
+# 1. Copiar a la raíz del rootfs
+# -a preserva atributos, -L resuelve enlaces simbólicos
+cp -aL ${FINDER_APP_DIR}/conf ${ROOTFSDIR}/
+# 2. Copiar a /home/conf (donde lo buscan los scripts de prueba)
+mkdir -p ${ROOTFSDIR}/home/conf
+cp -aL ${FINDER_APP_DIR}/conf/* ${ROOTFSDIR}/home/conf/
 
 # TODO: Chown the root directory
 cd ${ROOTFSDIR}
 sudo chown -R root:root ${ROOTFSDIR}/home
+sudo chown -R root:root ${ROOTFSDIR}/conf
 sudo chmod -R +x ${ROOTFSDIR}/home
+sudo chmod -R +x ${ROOTFSDIR}/conf
 sudo chmod +x ${ROOTFSDIR}/home/*.sh
 sudo chmod +x ${ROOTFSDIR}/home/writer
+echo "Verificando estructura de archivos..."
 ls -l ${ROOTFSDIR}/home/
+ls -d ${ROOTFSDIR}/conf
+ls -d ${ROOTFSDIR}/home/conf
 
 # TODO: Create initramfs.cpio.gz
 echo "Generating initramfs.cpio.gz..."
