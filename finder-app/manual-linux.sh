@@ -105,6 +105,7 @@ cp -a ${SYSROOT}/lib/ld-linux-aarch64.so.1 ${ROOTFSDIR}/lib/
 cp -a ${SYSROOT}/lib64/libm.so.6 ${ROOTFSDIR}/lib64/
 cp -a ${SYSROOT}/lib64/libc.so.6 ${ROOTFSDIR}/lib64/
 cp -a ${SYSROOT}/lib64/libresolv.so.2 ${ROOTFSDIR}/lib64/
+cp -a ${SYSROOT}/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib/
 
 # TODO: Make device nodes
 sudo mknod -m 666 ${ROOTFSDIR}/dev/null c 1 3
@@ -134,22 +135,29 @@ make CROSS_COMPILE=${CROSS_COMPILE}
 #mkdir ${ROOTFSDIR}/home/finder-app/conf
 #cp -r ${FINDER_APP_DIR}/conf/ ${ROOTFSDIR}/home/finder-app/
 #cp -r ${FINDER_APP_DIR}/conf/ ${ROOTFSDIR}/home/
-cp -ar ${TAREA_DIR}/. ${ROOTFSDIR}/home/
+# En lugar de copiar toda la tarea, copia los archivos específicos a /home
+cp ${FINDER_APP_DIR}/autorun-qemu.sh ${ROOTFSDIR}/home/
+cp ${FINDER_APP_DIR}/finder.sh ${ROOTFSDIR}/home/
+cp ${FINDER_APP_DIR}/finder-test.sh ${ROOTFSDIR}/home/
+cp ${FINDER_APP_DIR}/writer ${ROOTFSDIR}/home/
+mkdir -p ${ROOTFSDIR}/home/conf
+cp ${FINDER_APP_DIR}/conf/* ${ROOTFSDIR}/home/conf/
+
 
 # TODO: Chown the root directory
 cd ${ROOTFSDIR}
 sudo chown -R root:root ${ROOTFSDIR}/home
 sudo chmod -R +x ${ROOTFSDIR}/home
-sudo chmod -R +x ${ROOTFSDIR}/home/finder-app/*
+sudo chmod +x ${ROOTFSDIR}/home/*.sh
+sudo chmod +x ${ROOTFSDIR}/home/writer
 ls -l ${ROOTFSDIR}/home/
 
 # TODO: Create initramfs.cpio.gz
 echo "Generating initramfs.cpio.gz..."
 
-cd "${ROOTFSDIR}"
-
 # Usando el pipe para mayor seguridad
-find . | cpio -H newc -ov --owner root:root | gzip -f > "${OUTDIR}/initramfs.cpio.gz"
+cd "${ROOTFSDIR}"
+find . | sudo cpio -H newc -ov --owner root:root | gzip -f > "${OUTDIR}/initramfs.cpio.gz"
 
 if [ -f "${OUTDIR}/initramfs.cpio.gz" ]; then
     echo "Done! Your initramfs is ready at ${OUTDIR}/initramfs.cpio.gz"

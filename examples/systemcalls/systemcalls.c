@@ -23,8 +23,8 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
     int ret = system(cmd);
-    (void)ret;
-    return true;
+    if (ret == -1) return false;
+    return (WIFEXITED(ret) && WEXITSTATUS(ret) == 0);
 }
 
 /**
@@ -81,8 +81,10 @@ bool do_exec(int count, ...)
     } else {
         // Proceso padre: esperar a que el hijo termine
         int status;
-        waitpid(pid, &status, 0);
-
+        if (waitpid(pid, &status, 0) == -1) {
+            va_end(args);
+            return false;
+        }
         va_end(args);
         return WIFEXITED(status) && WEXITSTATUS(status) == 0;
     }
@@ -120,18 +122,27 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
     int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if (fd < 0) { 
+        perror("open"); 
+        va_end(args);
+        return false; 
+    }
     // Crear un proceso hijo
     pid_t pid = fork();
     if (pid < 0) {
+        close(fd);
         perror("fork failed");
         va_end(args);
         return false;
     } else if (pid == 0) {
         if (dup2(fd, 1) < 0) { perror("dup2"); abort(); }
         close(fd);
-        execvp(command[0], command); perror("execvp"); abort();
+        execvp(command[0], command);
+        perror("execvp");
+        abort();
         _exit(1);
     } else {
+        close(fd);
         // Proceso padre: esperar a que el hijo termine
         int status;
         waitpid(pid, &status, 0);
