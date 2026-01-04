@@ -8,10 +8,12 @@ SRCS = aesdsocket.c
 OBJS = $(SRCS:.c=.o)
 
 # Compilador: usa CROSS_COMPILE si está definido, sino gcc nativo
-CC = $(CROSS_COMPILE)gcc
+CC ?= $(CROSS_COMPILE)gcc
 
 # Flags de compilación
-CFLAGS = -Wall -Wextra -O2
+CFLAGS ?= -Wall -Wextra -O2
+
+LDFLAGS ?= -pthread -lrt
 
 # Default target
 all: $(TARGET)
