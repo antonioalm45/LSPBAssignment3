@@ -20,7 +20,7 @@ all: $(TARGET)
 
 # Compilar el ejecutable
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Compilar cada archivo .c a .o
 %.o: %.c
