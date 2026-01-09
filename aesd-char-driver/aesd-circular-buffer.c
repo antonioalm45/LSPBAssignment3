@@ -34,6 +34,14 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
      */
     if (buffer != NULL && entry_offset_byte_rtn != NULL)
     {
+
+#ifdef __KERNEL__
+        unsigned long flags;
+        spin_lock_irqsave(&buffer->lock, flags);
+#else
+        pthread_mutex_lock(&buffer->lock);
+#endif
+
         size_t cumulative_size = 0;
         uint8_t index = buffer->out_offs;
         uint8_t count = 0;
@@ -50,6 +58,13 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
             if (char_offset < (cumulative_size + current_entry->size))
             {
                 *entry_offset_byte_rtn = char_offset - cumulative_size;
+
+#ifdef __KERNEL__
+                spin_unlock_irqrestore(&buffer->lock, flags);
+#else
+                pthread_mutex_unlock(&buffer->lock);
+#endif
+
                 return current_entry;
             }
             cumulative_size += current_entry->size;
@@ -57,6 +72,13 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
             count++;
         }
     }
+
+#ifdef __KERNEL__
+    spin_unlock_irqrestore(&buffer->lock, flags);
+#else
+    pthread_mutex_unlock(&buffer->lock);
+#endif
+
     return NULL;
 }
 
@@ -74,6 +96,14 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
      */
     if (buffer != NULL && add_entry != NULL)
     {
+
+#ifdef __KERNEL__
+        unsigned long flags;
+        spin_lock_irqsave(&buffer->lock, flags);
+#else
+        pthread_mutex_lock(&buffer->lock);
+#endif
+
         if (buffer->full == true)
         {
             // Avanzamos out_offs para descartar la entrada más antigua
@@ -86,6 +116,12 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
         buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
         buffer->full = (buffer->in_offs == buffer->out_offs);
+
+#ifdef __KERNEL__
+        spin_unlock_irqrestore(&buffer->lock, flags);
+#else
+        pthread_mutex_unlock(&buffer->lock);
+#endif
     }
 }
 
@@ -95,4 +131,15 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
 void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
 {
     memset(buffer, 0, sizeof(struct aesd_circular_buffer));
+
+#ifdef __KERNEL__
+    spin_lock_init(&buffer->lock);
+#else
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    /* Opcional: mutex robusto para recuperación si un hilo muere con el lock */
+    // pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
+    pthread_mutex_init(&buffer->lock, &attr);
+    pthread_mutexattr_destroy(&attr);
+#endif
 }
