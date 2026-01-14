@@ -61,7 +61,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
                 *entry_offset_byte_rtn = char_offset - cumulative_size;
 
 #ifdef __KERNEL__
-                spin_unlock_irqrestore(&buffer->lock, flags);
+                mutex_unlock(&buffer->lock);
 #else
                 pthread_mutex_unlock(&buffer->lock);
 #endif
