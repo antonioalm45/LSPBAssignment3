@@ -152,60 +152,54 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     {
         PDEBUG("mutex not acquired");
         return -ERESTARTSYS;
+    }
+    kbuf = kmalloc(count, GFP_KERNEL);
+    if (!kbuf)
+    {
+        PDEBUG("kmalloc failed");
+        retval = -ENOMEM;
+        goto out_unlock;
+    }
 
-        kbuf = kmalloc(count, GFP_KERNEL);
-        if (!kbuf)
-        {
-            PDEBUG("kmalloc failed");
-            retval = -ENOMEM;
-            goto out_unlock;
-        }
+    if (copy_from_user(kbuf, buf, count))
+    {
+        PDEBUG("copy from user failed");
+        retval = -EFAULT;
+        goto out_free;
+    }
 
-        if (copy_from_user(kbuf, buf, count))
-        {
-            PDEBUG("copy from user failed");
-            retval = -EFAULT;
-            goto out_free;
-        }
-
-        // Check if command is terminated with \n
-        if (kbuf[count - 1] == '\n')
-        {
-            PDEBUG("write ends with newline");
-            new_entry.buffptr = kbuf;
-            new_entry.size = count;
-            // Introducir en bufer si termina en \n, sino almacenar
-            aesd_circular_buffer_add_entry(&dev->buffer, &new_entry);
-            ends_with_newline = true;
-        }
-        else
-        {
-            // Append to pending buffer
-            new_size = dev->pending_size + count;
-            new_buf = krealloc(dev->pending_buf, new_size, GFP_KERNEL);
-            if (!new_buf)
-            {
-                retval = -ENOMEM;
-                goto out_free;
-            }
-            memcpy(new_buf + dev->pending_size, kbuf, count);
-            dev->pending_buf = new_buf;
-            dev->pending_size = new_size;
-        }
-
-        retval = count;
-
-    out_free:
-        kfree(kbuf);
-    out_unlock:
-        mutex_unlock(&dev->lock);
-        return retval;
+    // Check if command is terminated with \n
+    if (kbuf[count - 1] == '\n')
+    {
+        PDEBUG("write ends with newline");
+        new_entry.buffptr = kbuf;
+        new_entry.size = count;
+        // Introducir en bufer si termina en \n, sino almacenar
+        aesd_circular_buffer_add_entry(&dev->buffer, &new_entry);
+        ends_with_newline = true;
     }
     else
     {
-        PDEBUG("mutex not acquired");
-        return -ERESTARTSYS;
+        // Append to pending buffer
+        new_size = dev->pending_size + count;
+        new_buf = krealloc(dev->pending_buf, new_size, GFP_KERNEL);
+        if (!new_buf)
+        {
+            retval = -ENOMEM;
+            goto out_free;
+        }
+        memcpy(new_buf + dev->pending_size, kbuf, count);
+        dev->pending_buf = new_buf;
+        dev->pending_size = new_size;
     }
+
+    retval = count;
+
+out_free:
+    kfree(kbuf);
+out_unlock:
+    mutex_unlock(&dev->lock);
+    return retval;
 }
 
 struct file_operations aesd_fops = {
