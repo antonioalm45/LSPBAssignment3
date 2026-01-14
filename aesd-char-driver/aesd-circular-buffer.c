@@ -10,8 +10,10 @@
 
 #ifdef __KERNEL__
 #include <linux/string.h>
+#include <linux/mutex.h>
 #else
 #include <string.h>
+#include <pthread.h>
 #endif
 
 #include "aesd-circular-buffer.h"
@@ -36,8 +38,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     {
 
 #ifdef __KERNEL__
-        unsigned long flags;
-        spin_lock_irqsave(&buffer->lock, flags);
+        mutex_lock(&buffer->lock);
 #else
         pthread_mutex_lock(&buffer->lock);
 #endif
@@ -74,7 +75,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     }
 
 #ifdef __KERNEL__
-    spin_unlock_irqrestore(&buffer->lock, flags);
+    mutex_unlock(&buffer->lock);
 #else
     pthread_mutex_unlock(&buffer->lock);
 #endif
@@ -98,8 +99,7 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
     {
 
 #ifdef __KERNEL__
-        unsigned long flags;
-        spin_lock_irqsave(&buffer->lock, flags);
+        mutex_lock(&buffer->lock);
 #else
         pthread_mutex_lock(&buffer->lock);
 #endif
@@ -118,7 +118,7 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
         buffer->full = (buffer->in_offs == buffer->out_offs);
 
 #ifdef __KERNEL__
-        spin_unlock_irqrestore(&buffer->lock, flags);
+        mutex_unlock(&buffer->lock);
 #else
         pthread_mutex_unlock(&buffer->lock);
 #endif
@@ -133,7 +133,7 @@ void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
     memset(buffer, 0, sizeof(struct aesd_circular_buffer));
 
 #ifdef __KERNEL__
-    spin_lock_init(&buffer->lock);
+    mutex_init(&buffer->lock);
 #else
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);

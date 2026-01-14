@@ -42,17 +42,11 @@ struct aesd_circular_buffer
      * The current location in the entry structure where the next write should
      * be stored.
      */
-    uint8_t in_offs;
-    /**
-     * The first location in the entry structure to read from
-     */
-    uint8_t out_offs;
-    /**
-     * set to true when the buffer entry structure is full
-     */
+    uint8_t in_offs;  /** The first location in the entry structure to read from */
+    uint8_t out_offs; /** set to true when the buffer entry structure is full */
     bool full;
 #ifdef __KERNEL__
-    spinlock_t lock;
+    struct mutex lock;
 #else
     pthread_mutex_t lock;
 #endif
