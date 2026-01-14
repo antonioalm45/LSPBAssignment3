@@ -15,11 +15,12 @@
 
 #define PORT 9000
 #define BACKLOG 1
-#define DATAFILE "/var/tmp/aesdsocketdata"
+#define DATAFILE "/dev/aesdchar"
 #define BUFFER_SIZE 1024
 
 // Estructura para pasar datos a los hilos
-typedef struct thread_data {
+typedef struct thread_data
+{
     int client_fd;
     struct sockaddr_in client_addr;
     pthread_t thread_id;
@@ -38,15 +39,19 @@ void signal_handler(int sig)
 }
 
 // HILO DEL TEMPORIZADOR (Escribe cada 10s)
-void *timer_thread(void *arg) {
+void *timer_thread(void *arg)
+{
     (void)arg;
-    while (!exit_requested) {
+    while (!exit_requested)
+    {
         // Esperar 10 segundos (usando sleep en intervalos cortos para responder rápido al exit)
-        for (int i = 0; i < 10 && !exit_requested; i++) {
+        for (int i = 0; i < 10 && !exit_requested; i++)
+        {
             sleep(1);
         }
-        
-        if (exit_requested) break;
+
+        if (exit_requested)
+            break;
 
         time_t rawtime;
         struct tm *info;
@@ -59,7 +64,8 @@ void *timer_thread(void *arg) {
 
         pthread_mutex_lock(&file_mutex);
         FILE *fp = fopen(DATAFILE, "a+");
-        if (fp) {
+        if (fp)
+        {
             fputs(timestamp, fp);
             fclose(fp);
         }
@@ -68,30 +74,34 @@ void *timer_thread(void *arg) {
     return NULL;
 }
 
-void *handle_connection(void *arg) {
+void *handle_connection(void *arg)
+{
     thread_data_t *data = (thread_data_t *)arg;
     char client_ip[INET_ADDRSTRLEN];
     char *recv_buf = malloc(BUFFER_SIZE);
     char *send_buf = malloc(BUFFER_SIZE);
-    
+
     inet_ntop(AF_INET, &data->client_addr.sin_addr, client_ip, sizeof(client_ip));
-    
+
     // El archivo debe abrirse y cerrarse dentro del hilo o manejarse con cuidado
     // Usaremos fopen/fclose dentro de la sección crítica para asegurar consistencia
-    
+
     ssize_t bytes_received;
     bool newline_found = false;
 
-    while (!exit_requested && (bytes_received = recv(data->client_fd, recv_buf, BUFFER_SIZE, 0)) > 0) {
-        
+    while (!exit_requested && (bytes_received = recv(data->client_fd, recv_buf, BUFFER_SIZE, 0)) > 0)
+    {
+
         pthread_mutex_lock(&file_mutex);
         FILE *fp = fopen(DATAFILE, "a+");
-        if (!fp) {
+        if (!fp)
+        {
             syslog(LOG_ERR, "File open failed: %s", strerror(errno));
             close(data->client_fd);
             continue;
         }
-        if (fp) {
+        if (fp)
+        {
             // 1. Obtener el tiempo actual
             time_t rawtime;
             struct tm *info;
@@ -111,18 +121,22 @@ void *handle_connection(void *arg) {
         }
         pthread_mutex_unlock(&file_mutex);
 
-        if (memchr(recv_buf, '\n', bytes_received)) {
+        if (memchr(recv_buf, '\n', bytes_received))
+        {
             newline_found = true;
             break;
         }
     }
 
-    if (newline_found) {
+    if (newline_found)
+    {
         pthread_mutex_lock(&file_mutex);
         FILE *fp = fopen(DATAFILE, "r");
-        if (fp) {
+        if (fp)
+        {
             size_t bytes_read;
-            while ((bytes_read = fread(send_buf, 1, BUFFER_SIZE, fp)) > 0) {
+            while ((bytes_read = fread(send_buf, 1, BUFFER_SIZE, fp)) > 0)
+            {
                 send(data->client_fd, send_buf, bytes_read, 0);
             }
             fclose(fp);
@@ -132,20 +146,24 @@ void *handle_connection(void *arg) {
 
     close(data->client_fd);
     syslog(LOG_INFO, "Closed connection from %s", client_ip);
-    
+
     free(recv_buf);
     free(send_buf);
     data->completed = true;
     return arg;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     bool daemon_mode = (argc > 1 && strcmp(argv[1], "-d") == 0);
 
-    if (daemon_mode) {
+    if (daemon_mode)
+    {
         pid_t pid = fork();
-        if (pid < 0) exit(-1);
-        if (pid > 0) exit(0);
+        if (pid < 0)
+            exit(-1);
+        if (pid > 0)
+            exit(0);
         setsid();
         chdir("/");
         int devnull = open("/dev/null", O_RDWR);
@@ -167,15 +185,16 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in server_address = {
         .sin_family = AF_INET,
         .sin_addr.s_addr = htonl(INADDR_ANY),
-        .sin_port = htons(PORT)
-    };
+        .sin_port = htons(PORT)};
 
-    if (bind(server_fd, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
+    if (bind(server_fd, (struct sockaddr *)&server_address, sizeof(server_address)) < 0)
+    {
         syslog(LOG_ERR, "Bind failed: %s", strerror(errno));
         close(server_fd);
         return -1;
     }
-    if (listen(server_fd, BACKLOG) < 0) {
+    if (listen(server_fd, BACKLOG) < 0)
+    {
         syslog(LOG_ERR, "Listen failed: %s", strerror(errno));
         close(server_fd);
         return -1;
@@ -187,19 +206,19 @@ int main(int argc, char *argv[]) {
 
     thread_data_t *head = NULL;
 
-    
-
-    while (!exit_requested) {
+    while (!exit_requested)
+    {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
         int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
 
-        if (client_fd < 0) {
-            if (errno == EINTR && exit_requested) 
+        if (client_fd < 0)
+        {
+            if (errno == EINTR && exit_requested)
                 break;
             syslog(LOG_ERR, "Accept failed: %s", strerror(errno));
             close(server_fd);
-            
+
             continue;
         }
 
@@ -219,16 +238,22 @@ int main(int argc, char *argv[]) {
 
         // Limpieza de hilos finalizados (Join)
         thread_data_t *curr = head, *prev = NULL;
-        while (curr) {
-            if (curr->completed) {
+        while (curr)
+        {
+            if (curr->completed)
+            {
                 pthread_join(curr->thread_id, NULL);
-                if (prev) prev->next = curr->next;
-                else head = curr->next;
-                
+                if (prev)
+                    prev->next = curr->next;
+                else
+                    head = curr->next;
+
                 thread_data_t *temp = curr;
                 curr = curr->next;
                 free(temp);
-            } else {
+            }
+            else
+            {
                 prev = curr;
                 curr = curr->next;
             }
@@ -236,7 +261,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* Cleanup */
-    while (head) {
+    while (head)
+    {
         pthread_join(head->thread_id, NULL);
         thread_data_t *temp = head;
         head = head->next;
@@ -245,7 +271,8 @@ int main(int argc, char *argv[]) {
 
     // Limpieza final
     pthread_join(timer_tid, NULL);
-    while (head) {
+    while (head)
+    {
         pthread_join(head->thread_id, NULL);
         thread_data_t *temp = head;
         head = head->next;
