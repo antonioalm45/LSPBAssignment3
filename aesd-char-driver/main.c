@@ -98,7 +98,6 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
     // EJEMPLO mínimo: sólo reportar “aceptado” por ahora.
     // Sustituye por tu lógica real de append/push:
-
     retval = count;
 
 out_free:
