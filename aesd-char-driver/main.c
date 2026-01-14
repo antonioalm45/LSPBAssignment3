@@ -37,6 +37,10 @@ int aesd_open(struct inode *inode, struct file *filp)
     /**
      * TODO: handle open
      */
+
+    dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
+    filp->private_data = dev;
+
     return 0;
 }
 
@@ -123,79 +127,92 @@ out_unlock:
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                    loff_t *f_pos)
 {
-    ssize_t retval = -ENOMEM;
-    char *kbuf = NULL;
-    bool ends_with_newline = false;
-    size_t new_size = 0;
-    char *new_buf = NULL;
     struct aesd_dev *dev;
+    ssize_t retval = 0;
+    char *kbuf = NULL;
+
     struct aesd_buffer_entry new_entry;
+    size_t total_size;
+    char *combined = NULL;
+
     PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
-    /**
-     * TODO: handle write
-     */
 
     if (!buf || count == 0)
-    {
-        PDEBUG("buf invalid or count is zero");
         return -EINVAL;
-    }
 
     dev = filp->private_data;
     if (!dev)
-    {
-        PDEBUG("dev invalid");
         return -EINVAL;
-    }
 
     if (mutex_lock_interruptible(&dev->lock))
-    {
-        PDEBUG("mutex not acquired");
         return -ERESTARTSYS;
-    }
+
     kbuf = kmalloc(count, GFP_KERNEL);
     if (!kbuf)
     {
-        PDEBUG("kmalloc failed");
         retval = -ENOMEM;
         goto out_unlock;
     }
 
     if (copy_from_user(kbuf, buf, count))
     {
-        PDEBUG("copy from user failed");
         retval = -EFAULT;
-        goto out_free;
+        goto out_free_kbuf;
     }
 
-    // Check if command is terminated with \n
+    /* Si la escritura termina en '\n', debemos "cerrar" un comando:
+     * - concatenar cualquier pending_buf + kbuf
+     * - añadir como UNA entrada al buffer circular
+     * - limpiar pending_buf
+     */
     if (kbuf[count - 1] == '\n')
     {
-        PDEBUG("write ends with newline");
-        new_entry.buffptr = kbuf;
-        new_entry.size = count;
-        // Introducir en bufer si termina en \n, sino almacenar
+        total_size = dev->pending_size + count;
+
+        combined = kmalloc(total_size, GFP_KERNEL);
+        if (!combined)
+        {
+            retval = -ENOMEM;
+            goto out_free_kbuf;
+        }
+
+        /* Copia lo pendiente primero, luego lo nuevo */
+        if (dev->pending_buf && dev->pending_size)
+            memcpy(combined, dev->pending_buf, dev->pending_size);
+
+        memcpy(combined + dev->pending_size, kbuf, count);
+
+        /* Liberamos el buffer pendiente, ya consumido */
+        kfree(dev->pending_buf);
+        dev->pending_buf = NULL;
+        dev->pending_size = 0;
+
+        /* Entregamos 'combined' al buffer circular (NO lo liberamos después) */
+        new_entry.buffptr = combined;
+        new_entry.size = total_size;
         aesd_circular_buffer_add_entry(&dev->buffer, &new_entry);
-        ends_with_newline = true;
+
+        /* Importante: NO liberar 'combined', ahora es propiedad del buffer */
+        retval = count;
     }
     else
     {
-        // Append to pending buffer
-        new_size = dev->pending_size + count;
-        new_buf = krealloc(dev->pending_buf, new_size, GFP_KERNEL);
+        /* Acumular escritura parcial (sin '\n') en pending_buf */
+        size_t new_size = dev->pending_size + count;
+        char *new_buf = krealloc(dev->pending_buf, new_size, GFP_KERNEL);
         if (!new_buf)
         {
             retval = -ENOMEM;
-            goto out_free;
+            goto out_free_kbuf;
         }
         memcpy(new_buf + dev->pending_size, kbuf, count);
         dev->pending_buf = new_buf;
         dev->pending_size = new_size;
+
+        retval = count;
     }
 
-    retval = count;
-
-out_free:
+out_free_kbuf:
     kfree(kbuf);
 out_unlock:
     mutex_unlock(&dev->lock);
@@ -244,6 +261,10 @@ int aesd_init_module(void)
      */
     aesd_circular_buffer_init(&aesd_device.buffer);
 
+    /* Inicializa los buffers pendientes */
+    aesd_device.pending_buf = NULL;
+    aesd_device.pending_size = 0;
+
     result = aesd_setup_cdev(&aesd_device);
 
     if (result)
@@ -256,12 +277,25 @@ int aesd_init_module(void)
 void aesd_cleanup_module(void)
 {
     dev_t devno = MKDEV(aesd_major, aesd_minor);
+    uint8_t i;
 
     cdev_del(&aesd_device.cdev);
 
-    /**
-     * TODO: cleanup AESD specific poritions here as necessary
-     */
+    /* Liberar cualquier pendencia */
+    if (aesd_device.pending_buf)
+    {
+        kfree(aesd_device.pending_buf);
+        aesd_device.pending_buf = NULL;
+        aesd_device.pending_size = 0;
+    }
+
+    /* Liberar entradas del buffer circular si quedaron asignadas */
+    for (i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    {
+        kfree(aesd_device.buffer.entry[i].buffptr);
+        aesd_device.buffer.entry[i].buffptr = NULL;
+        aesd_device.buffer.entry[i].size = 0;
+    }
 
     unregister_chrdev_region(devno, 1);
 }
