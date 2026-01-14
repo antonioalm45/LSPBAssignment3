@@ -23,7 +23,6 @@
 #include <linux/device.h>
 
 #include "aesdchar.h"
-#include "aesd-circular-buffer.h"
 int aesd_major = 0; // use dynamic major
 int aesd_minor = 0;
 
@@ -59,7 +58,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     size_t entry_offset_byte = 0;
     ssize_t retval = 0;
     size_t to_copy;
-    char *kbuf = NULL;
 
     PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
     /**
@@ -126,10 +124,12 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                    loff_t *f_pos)
 {
     ssize_t retval = -ENOMEM;
-    char *kbuf = NULL : bool ends_with_newline = false;
+    char *kbuf = NULL;
+    bool ends_with_newline = false;
     size_t new_size = 0;
     char *new_buf = NULL;
     struct aesd_dev *dev;
+    struct aesd_buffer_entry new_entry;
     PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
     /**
      * TODO: handle write
@@ -172,9 +172,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         if (kbuf[count - 1] == '\n')
         {
             PDEBUG("write ends with newline");
+            new_entry.buffptr = kbuf;
+            new_entry.size = count;
             // Introducir en bufer si termina en \n, sino almacenar
-            aesd_circular_buffer_add_entry(&dev->buffer, kbuf);
-            ends_with_nl = true;
+            aesd_circular_buffer_add_entry(&dev->buffer, &new_entry);
+            ends_with_newline = true;
         }
         else
         {
@@ -198,6 +200,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     out_unlock:
         mutex_unlock(&dev->lock);
         return retval;
+    }
+    else
+    {
+        PDEBUG("mutex not acquired");
+        return -ERESTARTSYS;
     }
 }
 
