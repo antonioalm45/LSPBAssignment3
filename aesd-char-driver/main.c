@@ -55,8 +55,7 @@ int aesd_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
-ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
-                  loff_t *f_pos)
+ssize_t aesd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
     struct aesd_dev *dev;
     const struct aesd_buffer_entry *entry;
@@ -91,8 +90,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     }
 
     // Traduce *f_pos a (entrada, offset dentro de la entrada)
-    entry = aesd_circular_buffer_find_entry_offset_for_fpos(
-        &dev->buffer, (size_t)*f_pos, &entry_offset_byte);
+    entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, (size_t)*f_pos, &entry_offset_byte);
 
     if (!entry)
     {
@@ -125,8 +123,7 @@ out_unlock:
     return retval;
 }
 
-ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
-                   loff_t *f_pos)
+ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
 {
     struct aesd_dev *dev;
     ssize_t retval = 0;
@@ -246,31 +243,50 @@ long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
         PDEBUG("ioctl seekto: write_cmd=%u, write_cmd_offset=%u", seekto.write_cmd, seekto.write_cmd_offset);
 
-        // Encuentra la entrada correspondiente al write_cmd especificado
-        entry = aesd_circular_buffer_find_entry_offset_for_fpos(
-            &dev->buffer, 0, &entry_offset_byte);
-
-        // Recorre las entradas hasta encontrar el comando write_cmd solicitado
-        while (entry && write_cmd_count < seekto.write_cmd)
+        // Calcular cuántas entradas válidas hay en el buffer
+        uint8_t num_entries = 0;
+        if (dev->buffer.full)
         {
-            write_cmd_count++;
-            // Busca la siguiente entrada desde donde terminó la actual
-            size_t next_offset = entry_offset_byte + entry->size;
-            PDEBUG("Skipping command %u, size=%zu", write_cmd_count - 1, entry->size);
-            entry = aesd_circular_buffer_find_entry_offset_for_fpos(
-                &dev->buffer, next_offset, &entry_offset_byte);
+            num_entries = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        }
+        else
+        {
+            // Si no está lleno, el número de entradas es la diferencia
+            if (dev->buffer.in_offs >= dev->buffer.out_offs)
+                num_entries = dev->buffer.in_offs - dev->buffer.out_offs;
+            else
+                num_entries = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - dev->buffer.out_offs + dev->buffer.in_offs;
         }
 
-        // Verifica que la entrada existe y el offset está dentro del rango
-        if (!entry || seekto.write_cmd_offset >= entry->size)
+        // Verificar que write_cmd es válido
+        if (seekto.write_cmd >= num_entries)
         {
-            PDEBUG("Invalid entry or offset: entry=%p, offset=%u, size=%zu", entry, seekto.write_cmd_offset, entry ? entry->size : 0);
+            PDEBUG("Invalid write_cmd: %u >= %u entries", seekto.write_cmd, num_entries);
             mutex_unlock(&dev->lock);
             return -EINVAL;
         }
 
-        // Calcula la nueva posición del fichero
-        fpos = entry_offset_byte + seekto.write_cmd_offset;
+        // Calcular el índice de la entrada solicitada
+        uint8_t entry_index = (dev->buffer.out_offs + seekto.write_cmd) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        entry = &dev->buffer.entry[entry_index];
+
+        // Verificar que el offset está dentro del rango de la entrada
+        if (seekto.write_cmd_offset >= entry->size)
+        {
+            PDEBUG("Invalid offset: %u >= %zu", seekto.write_cmd_offset, entry->size);
+            mutex_unlock(&dev->lock);
+            return -EINVAL;
+        }
+
+        // Calcular fpos: suma de tamaños de todas las entradas anteriores + offset dentro de la entrada actual
+        fpos = 0;
+        for (write_cmd_count = 0; write_cmd_count < seekto.write_cmd; write_cmd_count++)
+        {
+            uint8_t idx = (dev->buffer.out_offs + write_cmd_count) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+            fpos += dev->buffer.entry[idx].size;
+        }
+        fpos += seekto.write_cmd_offset;
+
         PDEBUG("Seeking to fpos=%zu", fpos);
         filp->f_pos = fpos;
 
@@ -341,8 +357,7 @@ int aesd_init_module(void)
 {
     dev_t dev = 0;
     int result;
-    result = alloc_chrdev_region(&dev, aesd_minor, 1,
-                                 "aesdchar");
+    result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
     aesd_major = MAJOR(dev);
     if (result < 0)
     {

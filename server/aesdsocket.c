@@ -125,20 +125,6 @@ void *handle_connection(void *arg)
         }
         if (fp)
         {
-            // 1. Obtener el tiempo actual
-            time_t rawtime;
-            struct tm *info;
-            char timestamp[64];
-
-            time(&rawtime);
-            info = localtime(&rawtime);
-
-            // 2. Formatear la fecha según RFC 2822
-            // %a: nombre día semana abreviado, %d: día, %b: mes abreviado, %Y: año, %H:%M:%S: hora, %z: zona horaria
-            strftime(timestamp, sizeof(timestamp), "%a, %d %b %Y %H:%M:%S %z", info);
-
-            // 3. Escribir primero el timestamp (opcionalmente con un prefijo para identificarlo)
-            fprintf(fp, "timestamp:%s\n", timestamp);
             fwrite(recv_buf, 1, bytes_received, fp);
             fclose(fp);
         }
