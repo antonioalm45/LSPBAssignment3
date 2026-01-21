@@ -12,6 +12,8 @@
 #include <signal.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/ioctl.h>
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define PORT 9000
 #define BACKLOG 1
@@ -88,9 +90,23 @@ void *handle_connection(void *arg)
 
     ssize_t bytes_received;
     bool newline_found = false;
+    bool is_ioctl_command = false;
+    uint32_t write_cmd = 0, write_cmd_offset = 0;
 
     while (!exit_requested && (bytes_received = recv(data->client_fd, recv_buf, BUFFER_SIZE, 0)) > 0)
     {
+        // Check if this is an AESDCHAR_IOCSEEKTO command
+        if (bytes_received > 0 && strncmp(recv_buf, "AESDCHAR_IOCSEEKTO:", 19) == 0)
+        {
+            // Parse X,Y from the command
+            char *cmd_params = recv_buf + 19; // Skip "AESDCHAR_IOCSEEKTO:"
+            if (sscanf(cmd_params, "%u,%u", &write_cmd, &write_cmd_offset) == 2)
+            {
+                is_ioctl_command = true;
+                newline_found = true;
+                break;
+            }
+        }
 
         pthread_mutex_lock(&file_mutex);
         FILE *fp = fopen(DATAFILE, "a+");
@@ -130,18 +146,61 @@ void *handle_connection(void *arg)
 
     if (newline_found)
     {
-        pthread_mutex_lock(&file_mutex);
-        FILE *fp = fopen(DATAFILE, "r");
-        if (fp)
+        if (is_ioctl_command)
         {
-            size_t bytes_read;
-            while ((bytes_read = fread(send_buf, 1, BUFFER_SIZE, fp)) > 0)
+            // Handle AESDCHAR_IOCSEEKTO command
+            pthread_mutex_lock(&file_mutex);
+
+            // Open device file with file descriptor (not FILE*)
+            int fd = open(DATAFILE, O_RDWR);
+            if (fd < 0)
             {
-                send(data->client_fd, send_buf, bytes_read, 0);
+                syslog(LOG_ERR, "Failed to open device for ioctl: %s", strerror(errno));
+                pthread_mutex_unlock(&file_mutex);
             }
-            fclose(fp);
+            else
+            {
+                // Prepare ioctl structure
+                struct aesd_seekto seekto;
+                seekto.write_cmd = write_cmd;
+                seekto.write_cmd_offset = write_cmd_offset;
+
+                // Perform ioctl
+                int ret = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+                if (ret != 0)
+                {
+                    syslog(LOG_ERR, "ioctl failed: %s", strerror(errno));
+                }
+                else
+                {
+                    // Read from the same file descriptor after ioctl
+                    ssize_t bytes_read;
+                    while ((bytes_read = read(fd, send_buf, BUFFER_SIZE)) > 0)
+                    {
+                        send(data->client_fd, send_buf, bytes_read, 0);
+                    }
+                }
+
+                close(fd);
+                pthread_mutex_unlock(&file_mutex);
+            }
         }
-        pthread_mutex_unlock(&file_mutex);
+        else
+        {
+            // Normal case: read entire file and send back
+            pthread_mutex_lock(&file_mutex);
+            FILE *fp = fopen(DATAFILE, "r");
+            if (fp)
+            {
+                size_t bytes_read;
+                while ((bytes_read = fread(send_buf, 1, BUFFER_SIZE, fp)) > 0)
+                {
+                    send(data->client_fd, send_buf, bytes_read, 0);
+                }
+                fclose(fp);
+            }
+            pthread_mutex_unlock(&file_mutex);
+        }
     }
 
     close(data->client_fd);
