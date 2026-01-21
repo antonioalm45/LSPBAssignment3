@@ -307,7 +307,9 @@ int main(int argc, char *argv[])
         new_thread->next = head;
         head = new_thread;
 
-        pthread_create(&new_thread->thread_id, NULL, handle_connection, new_thread);
+        syslog(LOG_INFO, "Creating thread for connection from %s", client_ip);
+        int thread_ret = pthread_create(&new_thread->thread_id, NULL, handle_connection, new_thread);
+        syslog(LOG_INFO, "pthread_create returned: %d", thread_ret);
 
         // Limpieza de hilos finalizados (Join)
         thread_data_t *curr = head, *prev = NULL;
