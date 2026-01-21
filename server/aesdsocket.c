@@ -96,13 +96,13 @@ void *handle_connection(void *arg)
     while (!exit_requested && (bytes_received = recv(data->client_fd, recv_buf, BUFFER_SIZE, 0)) > 0)
     {
         // Check if this is an AESDCHAR_IOCSEEKTO command
-        syslog(LOG_DEBUG, "Received: %.*s", (int)bytes_received, recv_buf);
+        syslog(LOG_INFO, "Received %zd bytes: %.*s", bytes_received, (int)bytes_received, recv_buf);
         if (bytes_received > 0 && strncmp(recv_buf, "AESDCHAR_IOCSEEKTO:", 19) == 0)
         {
             // Parse X,Y from the command
             char *cmd_params = recv_buf + 19; // Skip "AESDCHAR_IOCSEEKTO:"
             int parsed = sscanf(cmd_params, "%u,%u", &write_cmd, &write_cmd_offset);
-            syslog(LOG_DEBUG, "Parsed ioctl: write_cmd=%u, write_cmd_offset=%u, result=%d", write_cmd, write_cmd_offset, parsed);
+            syslog(LOG_INFO, "Parsed ioctl: write_cmd=%u, write_cmd_offset=%u, result=%d", write_cmd, write_cmd_offset, parsed);
             if (parsed == 2)
             {
                 is_ioctl_command = true;
@@ -153,6 +153,7 @@ void *handle_connection(void *arg)
         if (is_ioctl_command)
         {
             // Handle AESDCHAR_IOCSEEKTO command
+            syslog(LOG_INFO, "Processing AESDCHAR_IOCSEEKTO: cmd=%u, offset=%u", write_cmd, write_cmd_offset);
             pthread_mutex_lock(&file_mutex);
 
             // Open device file with file descriptor (not FILE*)
@@ -164,6 +165,8 @@ void *handle_connection(void *arg)
             }
             else
             {
+                syslog(LOG_INFO, "Device opened successfully, fd=%d", fd);
+
                 // Prepare ioctl structure
                 struct aesd_seekto seekto;
                 seekto.write_cmd = write_cmd;
@@ -171,16 +174,19 @@ void *handle_connection(void *arg)
 
                 // Perform ioctl
                 int ret = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+                syslog(LOG_INFO, "ioctl returned: %d", ret);
                 if (ret != 0)
                 {
-                    syslog(LOG_ERR, "ioctl failed: %s", strerror(errno));
+                    syslog(LOG_ERR, "ioctl failed with error %d: %s", ret, strerror(errno));
                 }
                 else
                 {
+                    syslog(LOG_INFO, "ioctl succeeded, reading from device");
                     // Read from the same file descriptor after ioctl
                     ssize_t bytes_read;
                     while ((bytes_read = read(fd, send_buf, BUFFER_SIZE)) > 0)
                     {
+                        syslog(LOG_INFO, "Read %zd bytes from device", bytes_read);
                         send(data->client_fd, send_buf, bytes_read, 0);
                     }
                 }
