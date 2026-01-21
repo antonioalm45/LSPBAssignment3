@@ -96,14 +96,18 @@ void *handle_connection(void *arg)
     while (!exit_requested && (bytes_received = recv(data->client_fd, recv_buf, BUFFER_SIZE, 0)) > 0)
     {
         // Check if this is an AESDCHAR_IOCSEEKTO command
+        syslog(LOG_DEBUG, "Received: %.*s", (int)bytes_received, recv_buf);
         if (bytes_received > 0 && strncmp(recv_buf, "AESDCHAR_IOCSEEKTO:", 19) == 0)
         {
             // Parse X,Y from the command
             char *cmd_params = recv_buf + 19; // Skip "AESDCHAR_IOCSEEKTO:"
-            if (sscanf(cmd_params, "%u,%u", &write_cmd, &write_cmd_offset) == 2)
+            int parsed = sscanf(cmd_params, "%u,%u", &write_cmd, &write_cmd_offset);
+            syslog(LOG_DEBUG, "Parsed ioctl: write_cmd=%u, write_cmd_offset=%u, result=%d", write_cmd, write_cmd_offset, parsed);
+            if (parsed == 2)
             {
                 is_ioctl_command = true;
                 newline_found = true;
+                syslog(LOG_INFO, "AESDCHAR_IOCSEEKTO command detected: cmd=%u offset=%u", write_cmd, write_cmd_offset);
                 break;
             }
         }

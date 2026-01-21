@@ -236,11 +236,15 @@ long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
     if (cmd == AESDCHAR_IOCSEEKTO)
     {
+        PDEBUG("AESDCHAR_IOCSEEKTO ioctl called");
         if (copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto)))
         {
+            PDEBUG("copy_from_user failed");
             mutex_unlock(&dev->lock);
             return -EFAULT;
         }
+
+        PDEBUG("ioctl seekto: write_cmd=%u, write_cmd_offset=%u", seekto.write_cmd, seekto.write_cmd_offset);
 
         // Encuentra la entrada correspondiente al write_cmd especificado
         entry = aesd_circular_buffer_find_entry_offset_for_fpos(
@@ -252,6 +256,7 @@ long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             write_cmd_count++;
             // Busca la siguiente entrada desde donde terminó la actual
             size_t next_offset = entry_offset_byte + entry->size;
+            PDEBUG("Skipping command %u, size=%zu", write_cmd_count - 1, entry->size);
             entry = aesd_circular_buffer_find_entry_offset_for_fpos(
                 &dev->buffer, next_offset, &entry_offset_byte);
         }
@@ -259,12 +264,14 @@ long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         // Verifica que la entrada existe y el offset está dentro del rango
         if (!entry || seekto.write_cmd_offset >= entry->size)
         {
+            PDEBUG("Invalid entry or offset: entry=%p, offset=%u, size=%zu", entry, seekto.write_cmd_offset, entry ? entry->size : 0);
             mutex_unlock(&dev->lock);
             return -EINVAL;
         }
 
         // Calcula la nueva posición del fichero
         fpos = entry_offset_byte + seekto.write_cmd_offset;
+        PDEBUG("Seeking to fpos=%zu", fpos);
         filp->f_pos = fpos;
 
         mutex_unlock(&dev->lock);
